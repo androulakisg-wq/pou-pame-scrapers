@@ -10,11 +10,14 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def scrape():
     url = "https://www.ticketservices.gr/en/crete/"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept-Charset": "utf-8"
+    }
 
     try:
         r = requests.get(url, headers=headers, timeout=30)
-        r.encoding = "utf-8"
+        r.encoding = "iso-8859-7"
         soup = BeautifulSoup(r.text, "html.parser")
         events = soup.select("li.event")
 
