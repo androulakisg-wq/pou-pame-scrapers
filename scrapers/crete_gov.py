@@ -8,57 +8,64 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+KEYWORDS = [
+    "εκδήλωση", "εκδηλώσεις", "συναυλία", "παράσταση",
+    "φεστιβάλ", "θέατρο", "χορός", "μουσική", "festival",
+    "event", "πολιτισμός", "καλοκαίρι", "αποκριά", "χριστούγεννα"
+]
+
 def scrape():
-    url = "https://www.crete.gov.gr/category/ekdiloseis/"
+    urls = [
+        "https://www.crete.gov.gr/category/anakoinoseis/feed/",
+        "https://www.crete.gov.gr/category/deltia-typoy/feed/"
+    ]
     headers = {"User-Agent": "Mozilla/5.0"}
 
-    try:
-        r = requests.get(url, headers=headers, timeout=30)
-        r.encoding = "utf-8"
-        soup = BeautifulSoup(r.text, "html.parser")
-        events = soup.select("article") or soup.select("div.post") or soup.select("div.event")
+    count = 0
+    for url in urls:
+        try:
+            r = requests.get(url, headers=headers, timeout=30)
+            r.encoding = "utf-8"
+            soup = BeautifulSoup(r.text, "xml")
+            items = soup.select("item")
 
-        count = 0
-        for ev in events:
-            try:
-                title_el = ev.select_one("h2") or ev.select_one("h3") or ev.select_one(".entry-title")
-                link_el = ev.select_one("a")
-                date_el = ev.select_one(".date") or ev.select_one("time") or ev.select_one(".entry-date")
-                img_el = ev.select_one("img")
+            for item in items:
+                try:
+                    title = item.find("title").get_text(strip=True)
+                    source_url = item.find("link").get_text(strip=True)
+                    description = item.find("description")
+                    desc_text = description.get_text(strip=True) if description else ""
+                    pub_date = item.find("pubDate")
+                    date_text = pub_date.get_text(strip=True) if pub_date else None
 
-                if not title_el or not link_el:
+                    title_lower = title.lower()
+                    desc_lower = desc_text.lower()
+                    if not any(k in title_lower or k in desc_lower for k in KEYWORDS):
+                        continue
+
+                    data = {
+                        "title": title,
+                        "source_url": source_url,
+                        "source_name": "crete.gov.gr",
+                        "location": "Κρήτη",
+                        "category": "Εκδηλώσεις",
+                        "image_url": None,
+                        "description": desc_text[:500] if desc_text else date_text,
+                        "date_start": None,
+                    }
+
+                    supabase.table("events").upsert(data, on_conflict="source_url").execute()
+                    count += 1
+
+                except Exception as e:
+                    print(f"Event error: {e}")
                     continue
 
-                title = title_el.get_text(strip=True)
-                source_url = link_el.get("href", "")
-                if source_url.startswith("/"):
-                    source_url = "https://www.crete.gov.gr" + source_url
+        except Exception as e:
+            print(f"Scrape error {url}: {e}")
+            continue
 
-                date_text = date_el.get_text(strip=True) if date_el else None
-                image_url = img_el.get("src") if img_el else None
-
-                data = {
-                    "title": title,
-                    "source_url": source_url,
-                    "source_name": "crete.gov.gr",
-                    "location": "Κρήτη",
-                    "category": "Εκδηλώσεις",
-                    "image_url": image_url,
-                    "description": date_text,
-                    "date_start": None,
-                }
-
-                supabase.table("events").upsert(data, on_conflict="source_url").execute()
-                count += 1
-
-            except Exception as e:
-                print(f"Event error: {e}")
-                continue
-
-        print(f"crete.gov.gr: {count} events saved")
-
-    except Exception as e:
-        print(f"Scrape error: {e}")
+    print(f"crete.gov.gr: {count} events saved")
 
 if __name__ == "__main__":
     scrape()
