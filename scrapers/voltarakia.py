@@ -2,11 +2,30 @@ import requests
 from bs4 import BeautifulSoup
 from supabase import create_client
 import os
+from datetime import datetime
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+MONTHS_GR = {
+    "Ιανουαρίου": 1, "Φεβρουαρίου": 2, "Μαρτίου": 3, "Απριλίου": 4,
+    "Μαΐου": 5, "Ιουνίου": 6, "Ιουλίου": 7, "Αυγούστου": 8,
+    "Σεπτεμβρίου": 9, "Οκτωβρίου": 10, "Νοεμβρίου": 11, "Δεκεμβρίου": 12
+}
+
+def parse_greek_date(date_str):
+    try:
+        # "Πέμπτη, 09 Απριλίου 2026"
+        date_str = date_str.replace(",", "").strip()
+        parts = date_str.split()
+        day = int(parts[1])
+        month = MONTHS_GR.get(parts[2], 0)
+        year = int(parts[3])
+        return datetime(year, month, day).isoformat()
+    except:
+        return None
 
 def scrape():
     url = "https://www.voltarakia.gr/index.php/blank-list-kriti"
@@ -16,6 +35,11 @@ def scrape():
         r = requests.get(url, headers=headers, timeout=30)
         r.encoding = "utf-8"
         soup = BeautifulSoup(r.text, "html.parser")
+
+        # Βρες την ημερομηνία της σελίδας
+        date_el = soup.select_one("div.currentmonth")
+        page_date = parse_greek_date(date_el.get_text(strip=True)) if date_el else None
+
         events = soup.select("li.ev_td_li")
 
         count = 0
@@ -32,7 +56,7 @@ def scrape():
 
                 spans = ev.select("span")
                 time_text = spans[0].get_text(strip=True) if len(spans) > 0 else None
-                location = spans[1].get_text(strip=True) if len(spans) > 1 else "Κρήτη"
+                location = spans[2].get_text(strip=True) if len(spans) > 2 else "Κρήτη"
 
                 data = {
                     "title": title,
@@ -42,7 +66,7 @@ def scrape():
                     "category": "Εκδηλώσεις",
                     "image_url": None,
                     "description": time_text,
-                    "date_start": None,
+                    "date_start": page_date,
                 }
 
                 supabase.table("events").upsert(data, on_conflict="source_url").execute()
