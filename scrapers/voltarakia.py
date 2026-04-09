@@ -9,35 +9,30 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def scrape():
-    url = "https://www.voltarakia.gr/ekdiloseis/"
+    url = "https://www.voltarakia.gr/index.php/blank-list-kriti"
     headers = {"User-Agent": "Mozilla/5.0"}
 
     try:
         r = requests.get(url, headers=headers, timeout=30)
         r.encoding = "utf-8"
         soup = BeautifulSoup(r.text, "html.parser")
-        events = soup.select("article") or soup.select("div.event") or soup.select("div.post")
+        events = soup.select("li.ev_td_li")
 
         count = 0
         for ev in events:
             try:
-                title_el = ev.select_one("h2") or ev.select_one("h3") or ev.select_one(".entry-title")
-                link_el = ev.select_one("a")
-                date_el = ev.select_one(".date") or ev.select_one("time") or ev.select_one(".entry-date")
-                img_el = ev.select_one("img")
-                loc_el = ev.select_one(".location") or ev.select_one(".venue")
-
-                if not title_el or not link_el:
+                link_el = ev.select_one("a.ev_link_row")
+                if not link_el:
                     continue
 
-                title = title_el.get_text(strip=True)
+                title = link_el.get("title", "").strip()
+                if not title:
+                    title = link_el.get_text(strip=True)
                 source_url = link_el.get("href", "")
-                if source_url.startswith("/"):
-                    source_url = "https://www.voltarakia.gr" + source_url
 
-                date_text = date_el.get_text(strip=True) if date_el else None
-                image_url = img_el.get("src") if img_el else None
-                location = loc_el.get_text(strip=True) if loc_el else "Κρήτη"
+                spans = ev.select("span")
+                time_text = spans[0].get_text(strip=True) if len(spans) > 0 else None
+                location = spans[1].get_text(strip=True) if len(spans) > 1 else "Κρήτη"
 
                 data = {
                     "title": title,
@@ -45,8 +40,8 @@ def scrape():
                     "source_name": "voltarakia.gr",
                     "location": location,
                     "category": "Εκδηλώσεις",
-                    "image_url": image_url,
-                    "description": date_text,
+                    "image_url": None,
+                    "description": time_text,
                     "date_start": None,
                 }
 
