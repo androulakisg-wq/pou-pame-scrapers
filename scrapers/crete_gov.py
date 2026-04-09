@@ -2,6 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 from supabase import create_client
 import os
+from email.utils import parsedate_to_datetime
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
@@ -13,6 +14,12 @@ KEYWORDS = [
     "φεστιβάλ", "θέατρο", "χορός", "μουσική", "festival",
     "event", "πολιτισμός", "καλοκαίρι", "αποκριά", "χριστούγεννα"
 ]
+
+def parse_rss_date(date_str):
+    try:
+        return parsedate_to_datetime(date_str).isoformat()
+    except:
+        return None
 
 def scrape():
     urls = [
@@ -26,17 +33,23 @@ def scrape():
         try:
             r = requests.get(url, headers=headers, timeout=30)
             r.encoding = "utf-8"
-            soup = BeautifulSoup(r.text, "xml")
+            soup = BeautifulSoup(r.content, "lxml-xml")
             items = soup.select("item")
 
             for item in items:
                 try:
-                    title = item.find("title").get_text(strip=True)
-                    source_url = item.find("link").get_text(strip=True)
-                    description = item.find("description")
-                    desc_text = description.get_text(strip=True) if description else ""
-                    pub_date = item.find("pubDate")
-                    date_text = pub_date.get_text(strip=True) if pub_date else None
+                    title_el = item.find("title")
+                    link_el = item.find("link")
+                    desc_el = item.find("description")
+                    pub_el = item.find("pubDate")
+
+                    if not title_el or not link_el:
+                        continue
+
+                    title = title_el.get_text(strip=True)
+                    source_url = link_el.get_text(strip=True)
+                    desc_text = desc_el.get_text(strip=True)[:500] if desc_el else ""
+                    date_start = parse_rss_date(pub_el.get_text(strip=True)) if pub_el else None
 
                     title_lower = title.lower()
                     desc_lower = desc_text.lower()
@@ -50,8 +63,8 @@ def scrape():
                         "location": "Κρήτη",
                         "category": "Εκδηλώσεις",
                         "image_url": None,
-                        "description": desc_text[:500] if desc_text else date_text,
-                        "date_start": None,
+                        "description": desc_text,
+                        "date_start": date_start,
                     }
 
                     supabase.table("events").upsert(data, on_conflict="source_url").execute()
