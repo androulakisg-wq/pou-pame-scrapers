@@ -2,18 +2,33 @@ import requests
 from bs4 import BeautifulSoup
 from supabase import create_client
 import os
+from datetime import datetime
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+MONTHS_EN = {
+    "January": 1, "February": 2, "March": 3, "April": 4,
+    "May": 5, "June": 6, "July": 7, "August": 8,
+    "September": 9, "October": 10, "November": 11, "December": 12
+}
+
+def parse_date(date_str):
+    try:
+        # "Sunday 19 April 2026"
+        parts = date_str.strip().split()
+        day = int(parts[1])
+        month = MONTHS_EN.get(parts[2], 0)
+        year = int(parts[3])
+        return datetime(year, month, day).isoformat()
+    except:
+        return None
+
 def scrape():
     url = "https://www.ticketservices.gr/en/crete/"
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept-Charset": "utf-8"
-    }
+    headers = {"User-Agent": "Mozilla/5.0"}
 
     try:
         r = requests.get(url, headers=headers, timeout=30)
@@ -40,6 +55,7 @@ def scrape():
 
                 location = location_el.get_text(strip=True) if location_el else "Κρήτη"
                 date_text = date_el.get_text(strip=True) if date_el else None
+                date_start = parse_date(date_text) if date_text else None
                 image_url = img_el.get("src") if img_el else None
 
                 data = {
@@ -50,7 +66,7 @@ def scrape():
                     "category": "Συναυλίες & Παραστάσεις",
                     "image_url": image_url,
                     "description": date_text,
-                    "date_start": None,
+                    "date_start": date_start,
                 }
 
                 supabase.table("events").upsert(data, on_conflict="source_url").execute()
