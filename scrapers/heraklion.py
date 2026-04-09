@@ -2,11 +2,18 @@ import requests
 from bs4 import BeautifulSoup
 from supabase import create_client
 import os
+from email.utils import parsedate_to_datetime
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+def parse_rss_date(date_str):
+    try:
+        return parsedate_to_datetime(date_str).isoformat()
+    except:
+        return None
 
 def scrape():
     url = "https://www.heraklion.gr/rss/culture"
@@ -25,6 +32,7 @@ def scrape():
                 link_el = item.find("link")
                 desc_el = item.find("description")
                 img_el = item.find("url")
+                pub_el = item.find("pubDate")
 
                 if not title_el or not link_el:
                     continue
@@ -33,6 +41,7 @@ def scrape():
                 source_url = link_el.get_text(strip=True)
                 desc_text = desc_el.get_text(strip=True)[:500] if desc_el else ""
                 image_url = img_el.get_text(strip=True) if img_el else None
+                date_start = parse_rss_date(pub_el.get_text(strip=True)) if pub_el else None
 
                 data = {
                     "title": title,
@@ -42,7 +51,7 @@ def scrape():
                     "category": "Πολιτισμός",
                     "image_url": image_url,
                     "description": desc_text,
-                    "date_start": None,
+                    "date_start": date_start,
                 }
 
                 supabase.table("events").upsert(data, on_conflict="source_url").execute()
