@@ -9,33 +9,33 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def scrape():
-    url = "https://www.heraklion.gr/activities/events.html"
+    url = "https://www.heraklion.gr/rss/culture"
     headers = {"User-Agent": "Mozilla/5.0"}
 
     try:
         r = requests.get(url, headers=headers, timeout=30)
         r.encoding = "utf-8"
-        soup = BeautifulSoup(r.text, "html.parser")
-        events = soup.select("div.views-row") or soup.select("article") or soup.select("div.event")
+        soup = BeautifulSoup(r.text, "xml")
+        items = soup.select("item")
+
+        keywords = ["εκδήλωση", "εκδηλώσεις", "συναυλία", "παράσταση", 
+                    "φεστιβάλ", "θέατρο", "πολιτισμός", "festival", "event"]
 
         count = 0
-        for ev in events:
+        for item in items:
             try:
-                title_el = ev.select_one("h2") or ev.select_one("h3") or ev.select_one(".title")
-                link_el = ev.select_one("a")
-                date_el = ev.select_one(".date") or ev.select_one("time")
-                img_el = ev.select_one("img")
+                title = item.find("title").get_text(strip=True)
+                source_url = item.find("link").get_text(strip=True)
+                description = item.find("description")
+                desc_text = description.get_text(strip=True) if description else ""
+                pub_date = item.find("pubDate")
+                date_text = pub_date.get_text(strip=True) if pub_date else None
+                img = item.find("url")
+                image_url = img.get_text(strip=True) if img else None
 
-                if not title_el or not link_el:
+                title_lower = title.lower()
+                if not any(k in title_lower for k in keywords):
                     continue
-
-                title = title_el.get_text(strip=True)
-                source_url = link_el.get("href", "")
-                if source_url.startswith("/"):
-                    source_url = "https://www.heraklion.gr" + source_url
-
-                date_text = date_el.get_text(strip=True) if date_el else None
-                image_url = img_el.get("src") if img_el else None
 
                 data = {
                     "title": title,
@@ -44,7 +44,7 @@ def scrape():
                     "location": "Ηράκλειο",
                     "category": "Πολιτισμός",
                     "image_url": image_url,
-                    "description": date_text,
+                    "description": desc_text[:500] if desc_text else date_text,
                     "date_start": None,
                 }
 
