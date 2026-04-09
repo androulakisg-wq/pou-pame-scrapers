@@ -15,27 +15,24 @@ def scrape():
     try:
         r = requests.get(url, headers=headers, timeout=30)
         r.encoding = "utf-8"
-        soup = BeautifulSoup(r.text, "xml")
+        soup = BeautifulSoup(r.content, "lxml-xml")
         items = soup.select("item")
-
-        keywords = ["εκδήλωση", "εκδηλώσεις", "συναυλία", "παράσταση", 
-                    "φεστιβάλ", "θέατρο", "πολιτισμός", "festival", "event"]
 
         count = 0
         for item in items:
             try:
-                title = item.find("title").get_text(strip=True)
-                source_url = item.find("link").get_text(strip=True)
-                description = item.find("description")
-                desc_text = description.get_text(strip=True) if description else ""
-                pub_date = item.find("pubDate")
-                date_text = pub_date.get_text(strip=True) if pub_date else None
-                img = item.find("url")
-                image_url = img.get_text(strip=True) if img else None
+                title_el = item.find("title")
+                link_el = item.find("link")
+                desc_el = item.find("description")
+                img_el = item.find("url")
 
-                title_lower = title.lower()
-                if not any(k in title_lower for k in keywords):
+                if not title_el or not link_el:
                     continue
+
+                title = title_el.get_text(strip=True)
+                source_url = link_el.get_text(strip=True)
+                desc_text = desc_el.get_text(strip=True)[:500] if desc_el else ""
+                image_url = img_el.get_text(strip=True) if img_el else None
 
                 data = {
                     "title": title,
@@ -44,7 +41,7 @@ def scrape():
                     "location": "Ηράκλειο",
                     "category": "Πολιτισμός",
                     "image_url": image_url,
-                    "description": desc_text[:500] if desc_text else date_text,
+                    "description": desc_text,
                     "date_start": None,
                 }
 
