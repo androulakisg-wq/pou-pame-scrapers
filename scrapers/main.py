@@ -2,6 +2,7 @@ from scrapers import ticketservices
 from scrapers import heraklion
 from scrapers import crete_gov
 from scrapers import voltarakia
+from scrapers import more
 
 print("=== Πού Πάμε; — Scrapers ξεκινούν ===")
 
@@ -16,5 +17,8 @@ crete_gov.scrape()
 
 print("\n--- voltarakia.gr ---")
 voltarakia.scrape()
+
+print("\n--- more.com ---")
+more.scrape()
 
 print("\n=== Ολοκληρώθηκε ===")
