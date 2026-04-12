@@ -12,7 +12,10 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 KEYWORDS = [
     "εκδήλωση", "εκδηλώσεις", "συναυλία", "παράσταση",
     "φεστιβάλ", "θέατρο", "χορός", "μουσική", "festival",
-    "event", "πολιτισμός", "καλοκαίρι", "αποκριά", "χριστούγεννα"
+    "event", "πολιτισμός", "καλοκαίρι", "αποκριά", "χριστούγεννα",
+    "γιορτή", "πανηγύρι", "διαγωνισμός", "έκθεση", "ημερίδα",
+    "συνέδριο", "αθλητισμός", "αγώνας", "τουρνουά", "σεμινάριο",
+    "παιδικά", "κινηματογράφος", "σινεμά", "διάλεξη", "ομιλία"
 ]
 
 def parse_rss_date(date_str):
@@ -24,7 +27,8 @@ def parse_rss_date(date_str):
 def scrape():
     urls = [
         "https://www.crete.gov.gr/category/anakoinoseis/feed/",
-        "https://www.crete.gov.gr/category/deltia-typoy/feed/"
+        "https://www.crete.gov.gr/category/deltia-typoy/feed/",
+        "https://www.crete.gov.gr/category/ekdiloseis/feed/",
     ]
     headers = {"User-Agent": "Mozilla/5.0"}
 
