@@ -2,7 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 from supabase import create_client
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
@@ -26,21 +26,22 @@ def parse_greek_date(date_str):
     except:
         return None
 
-def scrape():
-    url = "https://www.voltarakia.gr/index.php/blank-list-kriti"
+def scrape_day(date):
+    date_str = date.strftime("%Y-%m-%d")
+    url = f"https://www.voltarakia.gr/index.php/blank-list-kriti?date={date_str}"
     headers = {"User-Agent": "Mozilla/5.0"}
-
+    
     try:
         r = requests.get(url, headers=headers, timeout=30)
         r.encoding = "utf-8"
         soup = BeautifulSoup(r.text, "html.parser")
 
         date_el = soup.select_one("div.currentmonth")
-        page_date = parse_greek_date(date_el.get_text(strip=True)) if date_el else None
+        page_date = parse_greek_date(date_el.get_text(strip=True)) if date_el else date.isoformat()
 
         events = soup.select("li.ev_td_li")
-
         count = 0
+
         for ev in events:
             try:
                 link_el = ev.select_one("a.ev_link_row")
@@ -52,8 +53,6 @@ def scrape():
                     title = link_el.get_text(strip=True)
 
                 source_url = link_el.get("href", "")
-                
-                # Διασφαλίζουμε ότι το URL έχει πάντα το domain
                 if source_url.startswith("/"):
                     source_url = "https://www.voltarakia.gr" + source_url
                 elif not source_url.startswith("http"):
@@ -81,10 +80,22 @@ def scrape():
                 print(f"Event error: {e}")
                 continue
 
-        print(f"voltarakia.gr: {count} events saved")
+        return count
 
     except Exception as e:
-        print(f"Scrape error: {e}")
+        print(f"Scrape error for {date_str}: {e}")
+        return 0
+
+def scrape():
+    total = 0
+    today = datetime.now()
+    # Scrape σήμερα + 30 επόμενες μέρες
+    for i in range(31):
+        date = today + timedelta(days=i)
+        count = scrape_day(date)
+        total += count
+    
+    print(f"voltarakia.gr: {total} events saved")
 
 if __name__ == "__main__":
     scrape()
