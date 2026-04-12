@@ -29,19 +29,22 @@ def scrape():
         for item in items:
             try:
                 title_el = item.find("title")
-                link_el = item.find("link")
+                guid_el = item.find("guid")
                 desc_el = item.find("description")
                 img_el = item.find("url")
                 pub_el = item.find("pubDate")
 
-                if not title_el or not link_el:
+                if not title_el or not guid_el:
                     continue
 
                 title = title_el.get_text(strip=True)
-                source_url = link_el.get_text(strip=True)
+                source_url = guid_el.get_text(strip=True)
                 desc_text = desc_el.get_text(strip=True)[:500] if desc_el else ""
                 image_url = img_el.get_text(strip=True) if img_el else None
                 date_start = parse_rss_date(pub_el.get_text(strip=True)) if pub_el else None
+
+                if not title or not source_url:
+                    continue
 
                 data = {
                     "title": title,
