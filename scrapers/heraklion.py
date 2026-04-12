@@ -64,7 +64,7 @@ def scrape():
                 print(f"Event error: {e}")
                 continue
 
-        print(f"heraklion.gr: {count} events saved")
+        print(f"heraklion.gr: {count} events saved")  # DEBUG - θα σβηστεί μετά test = items[0] if items else None if test:     print("TITLE:", test.find("title").get_text(strip=True) if test.find("title") else "none")     print("GUID:", test.find("guid").get_text(strip=True) if test.find("guid") else "none")     print("LINK:", test.find("link").get_text(strip=True) if test.find("link") else "none")
 
     except Exception as e:
         print(f"Scrape error: {e}")
