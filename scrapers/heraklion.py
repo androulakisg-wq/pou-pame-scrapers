@@ -25,6 +25,13 @@ def scrape():
         soup = BeautifulSoup(r.content, "lxml-xml")
         items = soup.select("item")
 
+        # DEBUG
+        if items:
+            first = items[0]
+            print("DEBUG TITLE:", first.find("title").get_text(strip=True) if first.find("title") else "none")
+            print("DEBUG GUID:", first.find("guid").get_text(strip=True) if first.find("guid") else "none")
+            print("DEBUG LINK:", str(first.find("link")))
+
         count = 0
         for item in items:
             try:
@@ -64,7 +71,7 @@ def scrape():
                 print(f"Event error: {e}")
                 continue
 
-        print(f"heraklion.gr: {count} events saved")  # DEBUG - θα σβηστεί μετά test = items[0] if items else None if test:     print("TITLE:", test.find("title").get_text(strip=True) if test.find("title") else "none")     print("GUID:", test.find("guid").get_text(strip=True) if test.find("guid") else "none")     print("LINK:", test.find("link").get_text(strip=True) if test.find("link") else "none")
+        print(f"heraklion.gr: {count} events saved")
 
     except Exception as e:
         print(f"Scrape error: {e}")
