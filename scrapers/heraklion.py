@@ -25,33 +25,27 @@ def scrape():
         soup = BeautifulSoup(r.content, "lxml-xml")
         items = soup.select("item")
 
-        # DEBUG
-        if items:
-            first = items[0]
-            print("DEBUG TITLE:", first.find("title").get_text(strip=True) if first.find("title") else "none")
-            print("DEBUG GUID:", first.find("guid").get_text(strip=True) if first.find("guid") else "none")
-            print("DEBUG LINK:", str(first.find("link")))
-
         count = 0
         for item in items:
             try:
-                title_el = item.find("title")
+                # Παίρνουμε όλα τα title tags και κρατάμε το μη-άδειο
+                titles = item.find_all("title")
+                title = next((t.get_text(strip=True) for t in titles if t.get_text(strip=True)), None)
+
                 guid_el = item.find("guid")
                 desc_el = item.find("description")
-                img_el = item.find("url")
                 pub_el = item.find("pubDate")
+                
+                # Παίρνουμε image url από το image tag
+                image_tag = item.find("image")
+                img_url = image_tag.find("url").get_text(strip=True) if image_tag and image_tag.find("url") else None
 
-                if not title_el or not guid_el:
+                if not title or not guid_el:
                     continue
 
-                title = title_el.get_text(strip=True)
                 source_url = guid_el.get_text(strip=True)
                 desc_text = desc_el.get_text(strip=True)[:500] if desc_el else ""
-                image_url = img_el.get_text(strip=True) if img_el else None
                 date_start = parse_rss_date(pub_el.get_text(strip=True)) if pub_el else None
-
-                if not title or not source_url:
-                    continue
 
                 data = {
                     "title": title,
@@ -59,7 +53,7 @@ def scrape():
                     "source_name": "heraklion.gr",
                     "location": "Ηράκλειο",
                     "category": "Πολιτισμός",
-                    "image_url": image_url,
+                    "image_url": img_url,
                     "description": desc_text,
                     "date_start": date_start,
                 }
