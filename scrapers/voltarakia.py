@@ -17,7 +17,6 @@ MONTHS_GR = {
 
 def parse_greek_date(date_str):
     try:
-        # "Πέμπτη, 09 Απριλίου 2026"
         date_str = date_str.replace(",", "").strip()
         parts = date_str.split()
         day = int(parts[1])
@@ -36,7 +35,6 @@ def scrape():
         r.encoding = "utf-8"
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # Βρες την ημερομηνία της σελίδας
         date_el = soup.select_one("div.currentmonth")
         page_date = parse_greek_date(date_el.get_text(strip=True)) if date_el else None
 
@@ -52,7 +50,14 @@ def scrape():
                 title = link_el.get("title", "").strip()
                 if not title:
                     title = link_el.get_text(strip=True)
+
                 source_url = link_el.get("href", "")
+                
+                # Διασφαλίζουμε ότι το URL έχει πάντα το domain
+                if source_url.startswith("/"):
+                    source_url = "https://www.voltarakia.gr" + source_url
+                elif not source_url.startswith("http"):
+                    source_url = "https://www.voltarakia.gr/" + source_url
 
                 spans = ev.select("span")
                 time_text = spans[0].get_text(strip=True) if len(spans) > 0 else None
