@@ -53,30 +53,30 @@ def scrape():
                 desc_text = strip_html(desc_el.get_text(strip=True)) if desc_el else None
                 date_start = parse_rss_date(pub_el.get_text(strip=True)) if pub_el else None
 
-                # Φίλτρο παλιών events — μόνο από 2026
                 if date_start and date_start < "2026-01-01":
                     continue
 
-                data = {
+                raw_payload = {
                     "title": title,
-                    "source_url": source_url,
-                    "source_name": "heraklion.gr",
-                    "location": "Ηράκλειο",
-                    "category": "Πολιτισμός",
-                    "image_url": img_url,
                     "description": desc_text,
                     "date_start": date_start,
-                    "approved": True,
+                    "location_name": "Ηράκλειο",
+                    "image_url": img_url,
                 }
 
-                supabase.table("events").upsert(data, on_conflict="source_url").execute()
+                supabase.table("raw_events").insert({
+                    "source": "heraklion.gr",
+                    "source_url": source_url,
+                    "raw_payload": raw_payload,
+                }).execute()
+
                 count += 1
 
             except Exception as e:
                 print(f"Event error: {e}")
                 continue
 
-        print(f"heraklion.gr: {count} events saved")
+        print(f"heraklion.gr: {count} events saved to raw_events")
 
     except Exception as e:
         print(f"Scrape error: {e}")
