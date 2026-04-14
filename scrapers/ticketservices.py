@@ -49,15 +49,16 @@ def scrape():
         r.encoding = "utf-8"
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # Δοκιμάζουμε διάφορα selectors
-        events = soup.select("div.eventsnewr") or \
-                 soup.select("article.event") or \
-                 soup.select("div.event-item") or \
-                 soup.select("li.event")
+        events = (
+            soup.select("div.eventsnewr") or
+            soup.select("article.event") or
+            soup.select("div.event-item") or
+            soup.select("li.event")
+        )
 
         print(f"ticketservices: βρέθηκαν {len(events)} events")
-
         count = 0
+
         for ev in events:
             try:
                 link_el = ev.select_one("a")
@@ -82,26 +83,27 @@ def scrape():
                 if date_start and date_start < datetime.now().isoformat():
                     continue
 
-                data = {
+                raw_payload = {
                     "title": title,
-                    "source_url": source_url,
-                    "source_name": "ticketservices.gr",
-                    "location": "Κρήτη",
-                    "category": "Εκδηλώσεις",
-                    "image_url": None,
                     "description": None,
                     "date_start": date_start,
-                    "approved": True,
+                    "location_name": "Κρήτη",
+                    "image_url": None,
                 }
 
-                supabase.table("events").upsert(data, on_conflict="source_url").execute()
+                supabase.table("raw_events").insert({
+                    "source": "ticketservices.gr",
+                    "source_url": source_url,
+                    "raw_payload": raw_payload,
+                }).execute()
+
                 count += 1
 
             except Exception as e:
                 print(f"Event error: {e}")
                 continue
 
-        print(f"ticketservices.gr: {count} events saved")
+        print(f"ticketservices.gr: {count} events saved to raw_events")
 
     except Exception as e:
         print(f"Scrape error: {e}")
