@@ -3,11 +3,19 @@ from bs4 import BeautifulSoup
 from supabase import create_client
 import os
 from datetime import datetime, timedelta
+import re
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+def strip_html(text):
+    if not text:
+        return None
+    text = re.sub(r'<[^>]+>', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text[:500]
 
 def scrape_day(date):
     url = f"https://www.voltarakia.gr/kriti-events/eventsbyday/{date.year}/{date.month}/{date.day}/-"
@@ -37,7 +45,7 @@ def scrape_day(date):
                     source_url = "https://www.voltarakia.gr/" + source_url
 
                 spans = ev.select("span")
-                time_text = spans[0].get_text(strip=True) if len(spans) > 0 else None
+                time_text = strip_html(spans[0].get_text(strip=True)) if len(spans) > 0 else None
                 location = spans[2].get_text(strip=True) if len(spans) > 2 else "Κρήτη"
 
                 data = {
@@ -49,6 +57,7 @@ def scrape_day(date):
                     "image_url": None,
                     "description": time_text,
                     "date_start": date.isoformat(),
+                    "approved": True,
                 }
 
                 supabase.table("events").upsert(data, on_conflict="source_url").execute()
