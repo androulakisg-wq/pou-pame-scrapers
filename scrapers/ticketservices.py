@@ -11,9 +11,6 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 MONTHS_GR = {
-    "Ιαν": 1, "Φεβ": 2, "Μαρ": 3, "Απρ": 4,
-    "Μαΐ": 5, "Ιουν": 6, "Ιουλ": 7, "Αυγ": 8,
-    "Σεπ": 9, "Οκτ": 10, "Νοε": 11, "Δεκ": 12,
     "Ιανουαρίου": 1, "Φεβρουαρίου": 2, "Μαρτίου": 3,
     "Απριλίου": 4, "Μαΐου": 5, "Ιουνίου": 6,
     "Ιουλίου": 7, "Αυγούστου": 8, "Σεπτεμβρίου": 9,
@@ -31,44 +28,56 @@ def parse_date(date_str):
     try:
         date_str = date_str.strip()
         parts = date_str.split()
-        for part in parts:
+        for i, part in enumerate(parts):
             if part in MONTHS_GR:
-                idx = parts.index(part)
-                day = int(re.sub(r'\D', '', parts[idx-1])) if idx > 0 else 1
+                day = int(re.sub(r'\D', '', parts[i-1])) if i > 0 else 1
                 month = MONTHS_GR[part]
-                year = int(parts[idx+1]) if idx+1 < len(parts) else datetime.now().year
+                year = int(parts[i+1]) if i+1 < len(parts) and parts[i+1].isdigit() else datetime.now().year
                 return datetime(year, month, day).isoformat()
     except Exception:
         return None
 
 def scrape():
-    url = "https://www.ticketservices.gr/events/?region=crete"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    url = "https://www.ticketservices.gr/page/results/?q=%CE%BA%CF%81%CE%B7%CF%84%CE%B7"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept-Language": "el-GR,el;q=0.9",
+    }
 
     try:
         r = requests.get(url, headers=headers, timeout=30)
-        r.encoding = "iso-8859-7"
+        r.encoding = "utf-8"
         soup = BeautifulSoup(r.text, "html.parser")
-        events = soup.select("li.event")
-        count = 0
 
+        # Δοκιμάζουμε διάφορα selectors
+        events = soup.select("div.eventsnewr") or \
+                 soup.select("article.event") or \
+                 soup.select("div.event-item") or \
+                 soup.select("li.event")
+
+        print(f"ticketservices: βρέθηκαν {len(events)} events")
+
+        count = 0
         for ev in events:
             try:
-                title_el = ev.select_one("h3") or ev.select_one(".event-title")
                 link_el = ev.select_one("a")
-                date_el = ev.select_one(".date") or ev.select_one(".event-date")
-                desc_el = ev.select_one(".description") or ev.select_one("p")
+                title_el = ev.select_one("h2") or ev.select_one("h3") or ev.select_one(".title")
+                date_el = ev.select_one(".date") or ev.select_one("time") or ev.select_one(".event-date")
 
-                if not title_el or not link_el:
+                if not link_el:
                     continue
 
-                title = strip_html(title_el.get_text(strip=True))
+                title = strip_html(title_el.get_text(strip=True)) if title_el else strip_html(link_el.get_text(strip=True))
+                if not title:
+                    continue
+
                 source_url = link_el.get("href", "")
                 if source_url.startswith("/"):
                     source_url = "https://www.ticketservices.gr" + source_url
+                elif not source_url.startswith("http"):
+                    continue
 
                 date_start = parse_date(date_el.get_text(strip=True)) if date_el else None
-                desc_text = strip_html(desc_el.get_text(strip=True)) if desc_el else None
 
                 if date_start and date_start < datetime.now().isoformat():
                     continue
@@ -80,7 +89,7 @@ def scrape():
                     "location": "Κρήτη",
                     "category": "Εκδηλώσεις",
                     "image_url": None,
-                    "description": desc_text,
+                    "description": None,
                     "date_start": date_start,
                     "approved": True,
                 }
