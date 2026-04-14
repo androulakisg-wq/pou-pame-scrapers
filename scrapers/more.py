@@ -2,63 +2,91 @@ import requests
 from bs4 import BeautifulSoup
 from supabase import create_client
 import os
+import re
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+def strip_html(text):
+    if not text:
+        return None
+    text = re.sub(r'<[^>]+>', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text[:500]
+
 def scrape():
-    url = "https://www.more.com/gr-el/tickets/?city=395"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    urls = [
+        "https://www.more.com/gr-el/tickets/?city=395",
+        "https://www.more.com/gr-el/tickets/?city=395&page=2",
+    ]
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept-Language": "el-GR,el;q=0.9",
+        "Accept": "text/html,application/xhtml+xml",
+    }
 
     count = 0
-    try:
-        r = requests.get(url, headers=headers, timeout=60)
-        r.encoding = "utf-8"
-        soup = BeautifulSoup(r.text, "html.parser")
-        events = soup.select("li.play-template")
+    for url in urls:
+        try:
+            r = requests.get(url, headers=headers, timeout=60)
+            r.encoding = "utf-8"
+            soup = BeautifulSoup(r.text, "html.parser")
+            events = soup.select("li.play-template")
 
-        for ev in events:
-            try:
-                title_meta = ev.select_one("meta[itemprop='description']")
-                date_meta = ev.select_one("meta[itemprop='startDate']")
-                img_meta = ev.select_one("meta[itemprop='image']")
-                url_meta = ev.select_one("meta[itemprop='url']")
+            print(f"more.com: βρέθηκαν {len(events)} events στο {url}")
 
-                if not title_meta or not url_meta:
+            for ev in events:
+                try:
+                    title_meta = ev.select_one("meta[itemprop='name']") or ev.select_one("meta[itemprop='description']")
+                    date_meta = ev.select_one("meta[itemprop='startDate']")
+                    img_meta = ev.select_one("meta[itemprop='image']")
+                    url_meta = ev.select_one("meta[itemprop='url']")
+
+                    if not title_meta or not url_meta:
+                        continue
+
+                    title = strip_html(title_meta.get("content", "").strip())
+                    source_url_path = url_meta.get("content", "")
+                    if not source_url_path.startswith("http"):
+                        source_url = "https://www.more.com" + source_url_path
+                    else:
+                        source_url = source_url_path
+
+                    date_start = date_meta.get("content", "") if date_meta else None
+                    image_url = img_meta.get("content", "") if img_meta else None
+                    if image_url and not image_url.startswith("http"):
+                        image_url = "https://www.more.com" + image_url
+
+                    if not title or not source_url:
+                        continue
+
+                    raw_payload = {
+                        "title": title,
+                        "description": None,
+                        "date_start": date_start,
+                        "location_name": "Κρήτη",
+                        "image_url": image_url,
+                    }
+
+                    supabase.table("raw_events").insert({
+                        "source": "more.com",
+                        "source_url": source_url,
+                        "raw_payload": raw_payload,
+                    }).execute()
+
+                    count += 1
+
+                except Exception as e:
+                    print(f"Event error: {e}")
                     continue
 
-                title = title_meta.get("content", "").strip()
-                source_url = "https://www.more.com" + url_meta.get("content", "")
-                date_text = date_meta.get("content", "") if date_meta else None
-                image_url = "https://www.more.com" + img_meta.get("content", "") if img_meta else None
+        except Exception as e:
+            print(f"Scrape error {url}: {e}")
+            continue
 
-                if not title or not source_url:
-                    continue
-
-                data = {
-                    "title": title,
-                    "source_url": source_url,
-                    "source_name": "more.com",
-                    "location": "Ηράκλειο",
-                    "category": "Συναυλίες & Παραστάσεις",
-                    "image_url": image_url,
-                    "description": date_text,
-                    "date_start": None,
-                }
-
-                supabase.table("events").upsert(data, on_conflict="source_url").execute()
-                count += 1
-
-            except Exception as e:
-                print(f"Event error: {e}")
-                continue
-
-    except Exception as e:
-        print(f"Scrape error: {e}")
-
-    print(f"more.com: {count} events saved")
+    print(f"more.com: {count} events saved to raw_events")
 
 if __name__ == "__main__":
     scrape()
