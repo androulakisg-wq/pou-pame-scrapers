@@ -4,7 +4,7 @@ from supabase import create_client
 import os
 from datetime import datetime, timedelta
 import re
-import json
+import time
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
@@ -18,13 +18,34 @@ def strip_html(text):
     text = re.sub(r'\s+', ' ', text).strip()
     return text[:500]
 
+def fetch_with_retry(url, headers, max_retries=3):
+    """Fetch URL με retry logic και exponential backoff"""
+    for attempt in range(max_retries):
+        try:
+            r = requests.get(url, headers=headers, timeout=30)
+            r.encoding = "utf-8"
+            return r
+        except requests.Timeout:
+            if attempt < max_retries - 1:
+                wait = 2 ** attempt  # 1s, 2s, 4s
+                print(f"Timeout για {url} — retry {attempt + 1}/{max_retries} σε {wait}s")
+                time.sleep(wait)
+            else:
+                print(f"Αποτυχία μετά από {max_retries} προσπάθειες: {url}")
+                return None
+        except Exception as e:
+            print(f"Error {url}: {e}")
+            return None
+
 def scrape_day(date):
     url = f"https://www.voltarakia.gr/kriti-events/eventsbyday/{date.year}/{date.month}/{date.day}/-"
     headers = {"User-Agent": "Mozilla/5.0"}
 
+    r = fetch_with_retry(url, headers)
+    if not r:
+        return 0
+
     try:
-        r = requests.get(url, headers=headers, timeout=30)
-        r.encoding = "utf-8"
         soup = BeautifulSoup(r.text, "html.parser")
         events = soup.select("li.ev_td_li")
         count = 0
@@ -72,7 +93,7 @@ def scrape_day(date):
         return count
 
     except Exception as e:
-        print(f"Scrape error for {date}: {e}")
+        print(f"Parse error for {date}: {e}")
         return 0
 
 def scrape():
@@ -82,6 +103,8 @@ def scrape():
         date = today + timedelta(days=i)
         count = scrape_day(date)
         total += count
+        # Μικρή παύση για να μην spam-άρουμε το site
+        time.sleep(0.5)
 
     print(f"voltarakia.gr: {total} events saved to raw_events")
 
