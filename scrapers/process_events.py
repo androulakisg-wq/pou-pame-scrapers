@@ -52,7 +52,6 @@ def detect_tags(title, description):
 def process():
     print("=== Processing raw_events ===")
 
-    # Φέρε όλα τα raw_events
     result = supabase.table("raw_events").select("*").execute()
     raw_events = result.data
 
@@ -61,7 +60,7 @@ def process():
     skipped = 0
     errors = 0
 
-    today = datetime.now(timezone.utc).isoformat()
+    today = datetime.now(timezone.utc).date().isoformat()
 
     for raw in raw_events:
         try:
@@ -69,11 +68,10 @@ def process():
             source = raw.get("source", "")
             source_url = raw.get("source_url", "")
 
-            # Εξαγωγή πεδίων
             title = strip_html(payload.get("title", "")).strip() if payload.get("title") else None
             description = strip_html(payload.get("description", ""))
             date_start = payload.get("date_start")
-            location_name = payload.get("location_name") or payload.get("location")
+            location = payload.get("location_name") or payload.get("location")
             image_url = payload.get("image_url")
 
             # Validation
@@ -82,12 +80,12 @@ def process():
                 continue
 
             # Φίλτρο παλιών events
-            if date_start < today[:10]:
+            if str(date_start)[:10] < today:
                 skipped += 1
                 continue
 
             # Deduplication
-            event_hash = generate_hash(title, date_start, location_name)
+            event_hash = generate_hash(title, date_start, location)
             existing = supabase.table("event_hashes").select("id").eq("hash", event_hash).execute()
             if existing.data:
                 skipped += 1
@@ -98,13 +96,12 @@ def process():
             tags = detect_tags(title, description)
             is_free = "free" in tags
 
-            # Insert στο events table
+            # Insert στο events table — χρησιμοποιούμε "location" όχι "location_name"
             event_data = {
                 "title": title,
                 "description": description,
                 "date_start": date_start,
-                "location": location_name,
-                "location_name": location_name,
+                "location": location,
                 "image_url": image_url,
                 "category": category,
                 "tags": tags,
@@ -119,7 +116,6 @@ def process():
             if event_result.data:
                 event_id = event_result.data[0]["id"]
 
-                # Save hash
                 supabase.table("event_hashes").insert({
                     "hash": event_hash,
                     "event_id": event_id,
@@ -128,11 +124,11 @@ def process():
                 inserted += 1
 
         except Exception as e:
-            print(f"Error processing event: {e}")
+            print(f"Error: {e}")
             errors += 1
             continue
 
-    # Καθαρισμός raw_events μετά την επεξεργασία
+    # Καθαρισμός raw_events
     supabase.table("raw_events").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
 
     print(f"\n📊 Αποτελέσματα:")
