@@ -4,6 +4,7 @@ from supabase import create_client
 import os
 from datetime import datetime, timedelta
 import re
+import json
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
@@ -48,19 +49,20 @@ def scrape_day(date):
                 time_text = strip_html(spans[0].get_text(strip=True)) if len(spans) > 0 else None
                 location = spans[2].get_text(strip=True) if len(spans) > 2 else "Κρήτη"
 
-                data = {
+                raw_payload = {
                     "title": title,
-                    "source_url": source_url,
-                    "source_name": "voltarakia.gr",
-                    "location": location,
-                    "category": "Εκδηλώσεις",
-                    "image_url": None,
                     "description": time_text,
                     "date_start": date.isoformat(),
-                    "approved": True,
+                    "location_name": location,
+                    "image_url": None,
                 }
 
-                supabase.table("events").upsert(data, on_conflict="source_url").execute()
+                supabase.table("raw_events").insert({
+                    "source": "voltarakia.gr",
+                    "source_url": source_url,
+                    "raw_payload": raw_payload,
+                }).execute()
+
                 count += 1
 
             except Exception as e:
@@ -81,7 +83,7 @@ def scrape():
         count = scrape_day(date)
         total += count
 
-    print(f"voltarakia.gr: {total} events saved")
+    print(f"voltarakia.gr: {total} events saved to raw_events")
 
 if __name__ == "__main__":
     scrape()
