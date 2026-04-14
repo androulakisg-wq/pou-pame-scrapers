@@ -1,24 +1,49 @@
-from scrapers import ticketservices
-from scrapers import heraklion
-from scrapers import crete_gov
-from scrapers import voltarakia
-from scrapers import more
+from scrapers import ticketservices, heraklion, crete_gov, voltarakia, more
+from supabase import create_client
+import os
+from datetime import datetime, timezone
 
-print("=== Πού Πάμε; — Scrapers ξεκινούν ===")
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
-print("\n--- ticketservices.gr ---")
-ticketservices.scrape()
+def cleanup_old_events():
+    """Διαγραφή παλιών events αυτόματα"""
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        today = datetime.now(timezone.utc).date().isoformat()
+        
+        result = supabase.table("events")\
+            .delete()\
+            .lt("date_start", today)\
+            .neq("source_name", "user_submitted")\
+            .execute()
+        
+        print(f"🧹 Διαγράφηκαν παλιά events")
+    except Exception as e:
+        print(f"Cleanup error: {e}")
 
-print("\n--- heraklion.gr ---")
-heraklion.scrape()
+def main():
+    print("=== Πού Πάμε; — Scrapers ξεκινούν ===\n")
 
-print("\n--- crete.gov.gr ---")
-crete_gov.scrape()
+    # Καθαρισμός παλιών events πριν το scraping
+    cleanup_old_events()
 
-print("\n--- voltarakia.gr ---")
-voltarakia.scrape()
+    print("--- ticketservices.gr ---")
+    ticketservices.scrape()
 
-print("\n--- more.com ---")
-more.scrape()
+    print("--- heraklion.gr ---")
+    heraklion.scrape()
 
-print("\n=== Ολοκληρώθηκε ===")
+    print("--- crete.gov.gr ---")
+    crete_gov.scrape()
+
+    print("--- voltarakia.gr ---")
+    voltarakia.scrape()
+
+    print("--- more.com ---")
+    more.scrape()
+
+    print("\n=== Ολοκληρώθηκε ===")
+
+if __name__ == "__main__":
+    main()
