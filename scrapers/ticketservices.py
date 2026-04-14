@@ -2,6 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 from supabase import create_client
 import os
+import re
 from datetime import datetime
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -9,77 +10,57 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-MONTHS_EN = {
-    "January": 1, "February": 2, "March": 3, "April": 4,
-    "May": 5, "June": 6, "July": 7, "August": 8,
-    "September": 9, "October": 10, "November": 11, "December": 12
+MONTHS_GR = {
+    "Ιαν": 1, "Φεβ": 2, "Μαρ": 3, "Απρ": 4,
+    "Μαΐ": 5, "Ιουν": 6, "Ιουλ": 7, "Αυγ": 8,
+    "Σεπ": 9, "Οκτ": 10, "Νοε": 11, "Δεκ": 12,
+    "Ιανουαρίου": 1, "Φεβρουαρίου": 2, "Μαρτίου": 3,
+    "Απριλίου": 4, "Μαΐου": 5, "Ιουνίου": 6,
+    "Ιουλίου": 7, "Αυγούστου": 8, "Σεπτεμβρίου": 9,
+    "Οκτωβρίου": 10, "Νοεμβρίου": 11, "Δεκεμβρίου": 12
 }
+
+def strip_html(text):
+    if not text:
+        return None
+    text = re.sub(r'<[^>]+>', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text[:500]
 
 def parse_date(date_str):
     try:
-        # "Sunday 19 April 2026"
-        parts = date_str.strip().split()
-        day = int(parts[1])
-        month = MONTHS_EN.get(parts[2], 0)
-        year = int(parts[3])
-        return datetime(year, month, day).isoformat()
+        date_str = date_str.strip()
+        parts = date_str.split()
+        for part in parts:
+            if part in MONTHS_GR:
+                idx = parts.index(part)
+                day = int(re.sub(r'\D', '', parts[idx-1])) if idx > 0 else 1
+                month = MONTHS_GR[part]
+                year = int(parts[idx+1]) if idx+1 < len(parts) else datetime.now().year
+                return datetime(year, month, day).isoformat()
     except:
         return None
 
 def scrape():
-    url = "https://www.ticketservices.gr/en/crete/"
+    url = "https://www.ticketservices.gr/events/?region=crete"
     headers = {"User-Agent": "Mozilla/5.0"}
 
     try:
         r = requests.get(url, headers=headers, timeout=30)
         r.encoding = "iso-8859-7"
         soup = BeautifulSoup(r.text, "html.parser")
-        events = soup.select("li.event")
 
+        events = soup.select("li.event")
         count = 0
+
         for ev in events:
             try:
+                title_el = ev.select_one("h3") or ev.select_one(".event-title")
                 link_el = ev.select_one("a")
-                title_el = ev.select_one("h5 span")
-                location_el = ev.select_one("h5 em")
-                date_el = ev.select_one("span.dates")
-                img_el = ev.select_one("img")
+                date_el = ev.select_one(".date") or ev.select_one(".event-date")
+                desc_el = ev.select_one(".description") or ev.select_one("p")
 
                 if not title_el or not link_el:
                     continue
 
-                title = title_el.get_text(strip=True)
-                source_url = link_el.get("href", "")
-                if source_url.startswith("/"):
-                    source_url = "https://www.ticketservices.gr" + source_url
-
-                location = location_el.get_text(strip=True) if location_el else "Κρήτη"
-                date_text = date_el.get_text(strip=True) if date_el else None
-                date_start = parse_date(date_text) if date_text else None
-                image_url = img_el.get("src") if img_el else None
-
-                data = {
-                    "title": title,
-                    "source_url": source_url,
-                    "source_name": "ticketservices.gr",
-                    "location": location,
-                    "category": "Συναυλίες & Παραστάσεις",
-                    "image_url": image_url,
-                    "description": date_text,
-                    "date_start": date_start,
-                }
-
-                supabase.table("events").upsert(data, on_conflict="source_url").execute()
-                count += 1
-
-            except Exception as e:
-                print(f"Event error: {e}")
-                continue
-
-        print(f"ticketservices.gr: {count} events saved")
-
-    except Exception as e:
-        print(f"Scrape error: {e}")
-
-if __name__ == "__main__":
-    scrape()
+                title = strip_html(title_el.get_text(strip=True))
