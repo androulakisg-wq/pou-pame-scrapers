@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 from supabase import create_client
 import os
 from email.utils import parsedate_to_datetime
+import re
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
@@ -12,11 +13,11 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 KEYWORDS = [
     "εκδήλωση", "εκδηλώσεις", "συναυλία", "παράσταση",
     "φεστιβάλ", "θέατρο", "χορός", "μουσική", "festival",
-    "event", "πολιτισμός", "καλοκαίρι", "αποκριά", "χριστούγεννα",
-    "γιορτή", "πανηγύρι", "έκθεση", "ημερίδα", "συνέδριο",
-    "αθλητισμός", "αγώνας", "τουρνουά", "σεμινάριο",
-    "παιδικά", "κινηματογράφος", "διάλεξη", "ομιλία",
-    "συναυλίες", "αφιέρωμα", "πρεμιέρα", "εγκαίνια"
+    "event", "πολιτισμός", "γιορτή", "πανηγύρι",
+    "έκθεση", "ημερίδα", "συνέδριο", "αθλητισμός",
+    "αγώνας", "τουρνουά", "σεμινάριο", "παιδικά",
+    "κινηματογράφος", "διάλεξη", "ομιλία", "αφιέρωμα",
+    "πρεμιέρα", "εγκαίνια", "συναυλίες"
 ]
 
 def parse_rss_date(date_str):
@@ -24,6 +25,13 @@ def parse_rss_date(date_str):
         return parsedate_to_datetime(date_str).isoformat()
     except:
         return None
+
+def strip_html(text):
+    if not text:
+        return None
+    text = re.sub(r'<[^>]+>', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text[:500]
 
 def scrape():
     urls = [
@@ -52,11 +60,15 @@ def scrape():
 
                     title = title_el.get_text(strip=True)
                     source_url = link_el.get_text(strip=True)
-                    desc_text = desc_el.get_text(strip=True)[:500] if desc_el else ""
+                    desc_text = strip_html(desc_el.get_text(strip=True)) if desc_el else ""
                     date_start = parse_rss_date(pub_el.get_text(strip=True)) if pub_el else None
 
+                    # Φίλτρο παλιών events
+                    if date_start and date_start < "2026-01-01":
+                        continue
+
                     title_lower = title.lower()
-                    desc_lower = desc_text.lower()
+                    desc_lower = desc_text.lower() if desc_text else ""
                     if not any(k in title_lower or k in desc_lower for k in KEYWORDS):
                         continue
 
@@ -69,6 +81,7 @@ def scrape():
                         "image_url": None,
                         "description": desc_text,
                         "date_start": date_start,
+                        "approved": True,
                     }
 
                     supabase.table("events").upsert(data, on_conflict="source_url").execute()
