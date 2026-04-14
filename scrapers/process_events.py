@@ -111,7 +111,7 @@ def process():
                 "approved": True,
             }
 
-            event_result = supabase.table("events").insert(event_data).execute()
+            event_result = supabase.table("events").upsert(event_data, on_conflict="source_url").execute()
 
             if event_result.data:
                 event_id = event_result.data[0]["id"]
