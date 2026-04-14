@@ -38,7 +38,7 @@ def parse_date(date_str):
                 month = MONTHS_GR[part]
                 year = int(parts[idx+1]) if idx+1 < len(parts) else datetime.now().year
                 return datetime(year, month, day).isoformat()
-    except:
+    except Exception:
         return None
 
 def scrape():
@@ -49,7 +49,6 @@ def scrape():
         r = requests.get(url, headers=headers, timeout=30)
         r.encoding = "iso-8859-7"
         soup = BeautifulSoup(r.text, "html.parser")
-
         events = soup.select("li.event")
         count = 0
 
@@ -64,3 +63,39 @@ def scrape():
                     continue
 
                 title = strip_html(title_el.get_text(strip=True))
+                source_url = link_el.get("href", "")
+                if source_url.startswith("/"):
+                    source_url = "https://www.ticketservices.gr" + source_url
+
+                date_start = parse_date(date_el.get_text(strip=True)) if date_el else None
+                desc_text = strip_html(desc_el.get_text(strip=True)) if desc_el else None
+
+                if date_start and date_start < datetime.now().isoformat():
+                    continue
+
+                data = {
+                    "title": title,
+                    "source_url": source_url,
+                    "source_name": "ticketservices.gr",
+                    "location": "Κρήτη",
+                    "category": "Εκδηλώσεις",
+                    "image_url": None,
+                    "description": desc_text,
+                    "date_start": date_start,
+                    "approved": True,
+                }
+
+                supabase.table("events").upsert(data, on_conflict="source_url").execute()
+                count += 1
+
+            except Exception as e:
+                print(f"Event error: {e}")
+                continue
+
+        print(f"ticketservices.gr: {count} events saved")
+
+    except Exception as e:
+        print(f"Scrape error: {e}")
+
+if __name__ == "__main__":
+    scrape()
