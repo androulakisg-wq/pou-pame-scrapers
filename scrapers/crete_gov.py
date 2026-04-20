@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 from supabase import create_client
 import os
 from email.utils import parsedate_to_datetime
+from datetime import datetime, timezone
 import re
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -23,7 +24,7 @@ KEYWORDS = [
 def parse_rss_date(date_str):
     try:
         return parsedate_to_datetime(date_str).isoformat()
-    except:
+    except Exception:
         return None
 
 def strip_html(text):
@@ -39,6 +40,7 @@ def scrape():
         "https://www.crete.gov.gr/category/deltia-typoy/feed/",
     ]
     headers = {"User-Agent": "Mozilla/5.0"}
+    today = datetime.now(timezone.utc).date().isoformat()
 
     count = 0
     for url in urls:
@@ -63,7 +65,7 @@ def scrape():
                     desc_text = strip_html(desc_el.get_text(strip=True)) if desc_el else ""
                     date_start = parse_rss_date(pub_el.get_text(strip=True)) if pub_el else None
 
-                    if date_start and date_start < "2026-01-01":
+                    if date_start and date_start[:10] < today:
                         continue
 
                     title_lower = title.lower()
@@ -77,6 +79,7 @@ def scrape():
                         "date_start": date_start,
                         "location_name": "Κρήτη",
                         "image_url": None,
+                        "time_start": None,
                     }
 
                     supabase.table("raw_events").insert({
