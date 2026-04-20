@@ -1,15 +1,7 @@
-import requests
 from bs4 import BeautifulSoup
-from supabase import create_client
-import os
 from email.utils import parsedate_to_datetime
 from datetime import datetime, timezone
-import re
-
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+from scrapers.utils import strip_html, fetch_with_retry, insert_raw_event, report_scraper_health, get_supabase
 
 KEYWORDS = [
     "εκδήλωση", "εκδηλώσεις", "συναυλία", "παράσταση",
@@ -27,26 +19,22 @@ def parse_rss_date(date_str):
     except Exception:
         return None
 
-def strip_html(text):
-    if not text:
-        return None
-    text = re.sub(r'<[^>]+>', ' ', text)
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text[:500]
-
 def scrape():
+    supabase = get_supabase()
     urls = [
         "https://www.crete.gov.gr/category/anakoinoseis/feed/",
         "https://www.crete.gov.gr/category/deltia-typoy/feed/",
     ]
     headers = {"User-Agent": "Mozilla/5.0"}
     today = datetime.now(timezone.utc).date().isoformat()
-
     count = 0
+
     for url in urls:
         try:
-            r = requests.get(url, headers=headers, timeout=30)
-            r.encoding = "utf-8"
+            r = fetch_with_retry(url, headers=headers)
+            if not r:
+                continue
+
             soup = BeautifulSoup(r.content, "lxml-xml")
             items = soup.select("item")
 
@@ -73,7 +61,7 @@ def scrape():
                     if not any(k in title_lower or k in desc_lower for k in KEYWORDS):
                         continue
 
-                    raw_payload = {
+                    payload = {
                         "title": title,
                         "description": desc_text,
                         "date_start": date_start,
@@ -82,23 +70,18 @@ def scrape():
                         "time_start": None,
                     }
 
-                    supabase.table("raw_events").insert({
-                        "source": "crete.gov.gr",
-                        "source_url": source_url,
-                        "raw_payload": raw_payload,
-                    }).execute()
-
-                    count += 1
+                    if insert_raw_event(supabase, "crete.gov.gr", source_url, payload):
+                        count += 1
 
                 except Exception as e:
-                    print(f"Event error: {e}")
+                    print(f"  Event error: {e}")
                     continue
 
         except Exception as e:
-            print(f"Scrape error {url}: {e}")
+            print(f"  Scrape error {url}: {e}")
             continue
 
-    print(f"crete.gov.gr: {count} events saved to raw_events")
+    report_scraper_health("crete.gov.gr", count)
 
 if __name__ == "__main__":
     scrape()
