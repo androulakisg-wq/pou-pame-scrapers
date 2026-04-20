@@ -19,7 +19,6 @@ def strip_html(text):
     return text[:500]
 
 def fetch_with_retry(url, headers, max_retries=3):
-    """Fetch URL με retry logic και exponential backoff"""
     for attempt in range(max_retries):
         try:
             r = requests.get(url, headers=headers, timeout=30)
@@ -27,7 +26,7 @@ def fetch_with_retry(url, headers, max_retries=3):
             return r
         except requests.Timeout:
             if attempt < max_retries - 1:
-                wait = 2 ** attempt  # 1s, 2s, 4s
+                wait = 2 ** attempt
                 print(f"Timeout για {url} — retry {attempt + 1}/{max_retries} σε {wait}s")
                 time.sleep(wait)
             else:
@@ -70,12 +69,16 @@ def scrape_day(date):
                 time_text = strip_html(spans[0].get_text(strip=True)) if len(spans) > 0 else None
                 location = spans[2].get_text(strip=True) if len(spans) > 2 else "Κρήτη"
 
+                # Αποθήκευσε ώρα στο time_start ΜΟΝΟ αν είναι έγκυρη μορφή HH:MM
+                time_start = time_text if time_text and re.match(r'^\d{1,2}:\d{2}$', time_text.strip()) else None
+
                 raw_payload = {
                     "title": title,
-                    "description": time_text,
+                    "description": None,
                     "date_start": date.isoformat(),
                     "location_name": location,
                     "image_url": None,
+                    "time_start": time_start,
                 }
 
                 supabase.table("raw_events").insert({
@@ -103,7 +106,6 @@ def scrape():
         date = today + timedelta(days=i)
         count = scrape_day(date)
         total += count
-        # Μικρή παύση για να μην spam-άρουμε το site
         time.sleep(0.5)
 
     print(f"voltarakia.gr: {total} events saved to raw_events")
