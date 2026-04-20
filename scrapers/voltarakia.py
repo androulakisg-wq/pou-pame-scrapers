@@ -1,46 +1,13 @@
-import requests
-from bs4 import BeautifulSoup
-from supabase import create_client
-import os
-from datetime import datetime, timedelta
-import re
 import time
+from bs4 import BeautifulSoup
+from datetime import datetime, timedelta
+from scrapers.utils import strip_html, fetch_with_retry, insert_raw_event, report_scraper_health, get_supabase, parse_time
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-def strip_html(text):
-    if not text:
-        return None
-    text = re.sub(r'<[^>]+>', ' ', text)
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text[:500]
-
-def fetch_with_retry(url, headers, max_retries=3):
-    for attempt in range(max_retries):
-        try:
-            r = requests.get(url, headers=headers, timeout=30)
-            r.encoding = "utf-8"
-            return r
-        except requests.Timeout:
-            if attempt < max_retries - 1:
-                wait = 2 ** attempt
-                print(f"Timeout για {url} — retry {attempt + 1}/{max_retries} σε {wait}s")
-                time.sleep(wait)
-            else:
-                print(f"Αποτυχία μετά από {max_retries} προσπάθειες: {url}")
-                return None
-        except Exception as e:
-            print(f"Error {url}: {e}")
-            return None
-
-def scrape_day(date):
+def scrape_day(supabase, date):
     url = f"https://www.voltarakia.gr/kriti-events/eventsbyday/{date.year}/{date.month}/{date.day}/-"
     headers = {"User-Agent": "Mozilla/5.0"}
 
-    r = fetch_with_retry(url, headers)
+    r = fetch_with_retry(url, headers=headers)
     if not r:
         return 0
 
@@ -69,10 +36,10 @@ def scrape_day(date):
                 time_text = strip_html(spans[0].get_text(strip=True)) if len(spans) > 0 else None
                 location = spans[2].get_text(strip=True) if len(spans) > 2 else "Κρήτη"
 
-                # Αποθήκευσε ώρα στο time_start ΜΟΝΟ αν είναι έγκυρη μορφή HH:MM
-                time_start = time_text if time_text and re.match(r'^\d{1,2}:\d{2}$', time_text.strip()) else None
+                # parse_time από utils — αποκλείει artifacts (00:00, 07:13 κλπ)
+                time_start = parse_time(time_text)
 
-                raw_payload = {
+                payload = {
                     "title": title,
                     "description": None,
                     "date_start": date.isoformat(),
@@ -81,34 +48,31 @@ def scrape_day(date):
                     "time_start": time_start,
                 }
 
-                supabase.table("raw_events").insert({
-                    "source": "voltarakia.gr",
-                    "source_url": source_url,
-                    "raw_payload": raw_payload,
-                }).execute()
-
-                count += 1
+                if insert_raw_event(supabase, "voltarakia.gr", source_url, payload):
+                    count += 1
 
             except Exception as e:
-                print(f"Event error: {e}")
+                print(f"  Event error: {e}")
                 continue
 
         return count
 
     except Exception as e:
-        print(f"Parse error for {date}: {e}")
+        print(f"  Parse error for {date}: {e}")
         return 0
 
 def scrape():
+    supabase = get_supabase()
     total = 0
     today = datetime.now()
+
     for i in range(30):
         date = today + timedelta(days=i)
-        count = scrape_day(date)
+        count = scrape_day(supabase, date)
         total += count
         time.sleep(0.5)
 
-    print(f"voltarakia.gr: {total} events saved to raw_events")
+    report_scraper_health("voltarakia.gr", total)
 
 if __name__ == "__main__":
     scrape()
