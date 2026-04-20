@@ -3,6 +3,8 @@ from bs4 import BeautifulSoup
 from supabase import create_client
 import os
 import re
+import time
+from datetime import datetime, timezone
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
@@ -16,6 +18,16 @@ def strip_html(text):
     text = re.sub(r'\s+', ' ', text).strip()
     return text[:500]
 
+def parse_time(date_str):
+    """Εξάγει ώρα HH:MM από ISO datetime string όπως 2026-04-19T22:00:00"""
+    if not date_str:
+        return None
+    match = re.search(r'T(\d{2}:\d{2})', date_str)
+    if match:
+        t = match.group(1)
+        return None if t == "00:00" else t
+    return None
+
 def scrape():
     urls = [
         "https://www.more.com/gr-el/tickets/?city=395",
@@ -26,8 +38,10 @@ def scrape():
         "Accept-Language": "el-GR,el;q=0.9",
         "Accept": "text/html,application/xhtml+xml",
     }
-
+    today = datetime.now(timezone.utc).date().isoformat()
+    seen_urls = set()
     count = 0
+
     for url in urls:
         try:
             r = requests.get(url, headers=headers, timeout=60)
@@ -48,19 +62,32 @@ def scrape():
                         continue
 
                     title = strip_html(title_meta.get("content", "").strip())
+                    if not title:
+                        continue
+
                     source_url_path = url_meta.get("content", "")
                     if not source_url_path.startswith("http"):
                         source_url = "https://www.more.com" + source_url_path
                     else:
                         source_url = source_url_path
 
-                    date_start = date_meta.get("content", "") if date_meta else None
+                    # Αποφυγή duplicates στο ίδιο run
+                    if source_url in seen_urls:
+                        continue
+                    seen_urls.add(source_url)
+
+                    date_str = date_meta.get("content", "") if date_meta else None
+
+                    # Φίλτρο παλιών events
+                    if date_str and date_str[:10] < today:
+                        continue
+
                     image_url = img_meta.get("content", "") if img_meta else None
                     if image_url and not image_url.startswith("http"):
                         image_url = "https://www.more.com" + image_url
 
-                    if not title or not source_url:
-                        continue
+                    time_start = parse_time(date_str)
+                    date_start = date_str[:10] if date_str and len(date_str) >= 10 else None
 
                     raw_payload = {
                         "title": title,
@@ -68,6 +95,7 @@ def scrape():
                         "date_start": date_start,
                         "location_name": "Κρήτη",
                         "image_url": image_url,
+                        "time_start": time_start,
                     }
 
                     supabase.table("raw_events").insert({
@@ -77,6 +105,7 @@ def scrape():
                     }).execute()
 
                     count += 1
+                    time.sleep(0.3)
 
                 except Exception as e:
                     print(f"Event error: {e}")
