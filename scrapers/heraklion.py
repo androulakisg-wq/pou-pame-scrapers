@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 from supabase import create_client
 import os
 from email.utils import parsedate_to_datetime
+from datetime import datetime, timezone
 import re
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -13,7 +14,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 def parse_rss_date(date_str):
     try:
         return parsedate_to_datetime(date_str).isoformat()
-    except:
+    except Exception:
         return None
 
 def strip_html(text):
@@ -26,6 +27,7 @@ def strip_html(text):
 def scrape():
     url = "https://www.heraklion.gr/rss/culture"
     headers = {"User-Agent": "Mozilla/5.0"}
+    today = datetime.now(timezone.utc).date().isoformat()
 
     try:
         r = requests.get(url, headers=headers, timeout=30)
@@ -53,7 +55,8 @@ def scrape():
                 desc_text = strip_html(desc_el.get_text(strip=True)) if desc_el else None
                 date_start = parse_rss_date(pub_el.get_text(strip=True)) if pub_el else None
 
-                if date_start and date_start < "2026-01-01":
+                # Δυναμικό φίλτρο — αντί hardcoded έτος, χρησιμοποιούμε σημερινή ημερομηνία
+                if date_start and date_start[:10] < today:
                     continue
 
                 raw_payload = {
@@ -62,6 +65,7 @@ def scrape():
                     "date_start": date_start,
                     "location_name": "Ηράκλειο",
                     "image_url": img_url,
+                    "time_start": None,
                 }
 
                 supabase.table("raw_events").insert({
