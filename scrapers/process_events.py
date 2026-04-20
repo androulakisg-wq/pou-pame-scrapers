@@ -16,8 +16,15 @@ def strip_html(text):
     text = re.sub(r'\s+', ' ', text).strip()
     return text[:500]
 
+def normalize(text):
+    if not text:
+        return ""
+    text = text.lower().strip()
+    text = re.sub(r'\s+', ' ', text)
+    return text
+
 def generate_hash(title, date_start, location):
-    raw = f"{(title or '').lower().strip()}{str(date_start)[:10]}{(location or '').lower().strip()}"
+    raw = f"{normalize(title)}{str(date_start)[:10]}{normalize(location)}"
     return hashlib.md5(raw.encode()).hexdigest()
 
 def detect_category(title, description):
@@ -39,7 +46,7 @@ def detect_category(title, description):
 def detect_tags(title, description):
     text = f"{title or ''} {description or ''}".lower()
     tags = []
-    if any(k in text for k in ["δωρεάν", "δωρεαν", "free", "ελεύθερη είσοδος", "ελεύθερη είσοδο"]):
+    if any(k in text for k in ["δωρεάν", "δωρεαν", "free", "ελεύθερη είσοδος"]):
         tags.append("free")
     if any(k in text for k in ["παιδιά", "παιδικ", "kids", "οικογένεια"]):
         tags.append("family")
@@ -63,6 +70,10 @@ def process():
     inserted = 0
     updated = 0
     skipped = 0
+    skipped_no_title = 0
+    skipped_no_date = 0
+    skipped_past = 0
+    skipped_no_url = 0
     errors = 0
 
     today = datetime.now(timezone.utc).date().isoformat()
@@ -73,42 +84,52 @@ def process():
             source = raw.get("source", "")
             source_url = raw.get("source_url", "")
 
-            # Εξαγωγή πεδίων
             title_raw = payload.get("title", "")
             title = strip_html(title_raw).strip() if title_raw else None
             description = strip_html(payload.get("description") or "")
             date_start = payload.get("date_start")
             location = payload.get("location_name") or payload.get("location") or "Κρήτη"
             image_url = payload.get("image_url")
+            time_start = payload.get("time_start")
 
-            # Validation
+            # Validation με logging
             if not title:
+                skipped_no_title += 1
                 skipped += 1
                 continue
 
-            if not date_start:
-                skipped += 1
-                continue
-
-            # Φίλτρο παλιών events
-            if str(date_start)[:10] < today:
-                skipped += 1
-                continue
-
-            # Φίλτρο άδειων URLs
             if not source_url or not source_url.startswith("http"):
+                skipped_no_url += 1
                 skipped += 1
                 continue
 
-            # Category & Tags
+            # Date handling — δεν απορρίπτουμε events χωρίς date_start
+            if date_start:
+                if str(date_start)[:10] < today:
+                    skipped_past += 1
+                    skipped += 1
+                    continue
+            else:
+                # Event χωρίς ημερομηνία — κρατάμε με null date
+                skipped_no_date += 1
+                print(f"  [NO DATE] {title[:60]} ({source})")
+
             category = detect_category(title, description)
             tags = detect_tags(title, description)
             is_free = "free" in tags
 
+            # Δημιουργία date_start με ώρα αν υπάρχει time_start
+            date_start_full = None
+            if date_start:
+                if time_start:
+                    date_start_full = f"{str(date_start)[:10]}T{time_start}:00"
+                else:
+                    date_start_full = date_start
+
             event_data = {
                 "title": title,
                 "description": description or None,
-                "date_start": date_start,
+                "date_start": date_start_full,
                 "location": location,
                 "image_url": image_url,
                 "category": category,
@@ -117,9 +138,9 @@ def process():
                 "source_url": source_url,
                 "is_free": is_free,
                 "approved": True,
+                "time_start": time_start,
             }
 
-            # Upsert — ενημερώνει αν υπάρχει, εισάγει αν δεν υπάρχει
             event_result = supabase.table("events").upsert(
                 event_data,
                 on_conflict="source_url"
@@ -129,7 +150,6 @@ def process():
                 event_id = event_result.data[0]["id"]
                 event_hash = generate_hash(title, date_start, location)
 
-                # Αποθήκευση hash μόνο αν δεν υπάρχει
                 try:
                     existing = supabase.table("event_hashes").select("id").eq("hash", event_hash).execute()
                     if not existing.data:
@@ -145,23 +165,28 @@ def process():
 
         except Exception as e:
             errors += 1
+            print(f"  [ERROR] {e}")
             continue
 
-    # Καθαρισμός raw_events μετά την επεξεργασία
+    # Καθαρισμός raw_events
     try:
         supabase.table("raw_events").delete().neq(
             "id", "00000000-0000-0000-0000-000000000000"
         ).execute()
-        print("🧹 raw_events καθαρίστηκαν")
+        print("raw_events καθαρίστηκαν")
     except Exception as e:
         print(f"Cleanup raw_events error: {e}")
 
-    print(f"\n📊 Αποτελέσματα:")
-    print(f"   Σύνολο: {total}")
-    print(f"   Νέα: {inserted}")
-    print(f"   Ενημερώθηκαν: {updated}")
-    print(f"   Παραλείφθηκαν: {skipped}")
-    print(f"   Σφάλματα: {errors}")
+    print(f"\nΑποτελέσματα:")
+    print(f"  Σύνολο raw:        {total}")
+    print(f"  Νέα events:        {inserted}")
+    print(f"  Ενημερώθηκαν:      {updated}")
+    print(f"  Παραλείφθηκαν:     {skipped}")
+    print(f"    - Χωρίς τίτλο:   {skipped_no_title}")
+    print(f"    - Χωρίς URL:     {skipped_no_url}")
+    print(f"    - Παλιά events:  {skipped_past}")
+    print(f"    - Χωρίς ημ/νία: {skipped_no_date} (κρατήθηκαν με null date)")
+    print(f"  Σφάλματα:          {errors}")
 
 if __name__ == "__main__":
     process()
