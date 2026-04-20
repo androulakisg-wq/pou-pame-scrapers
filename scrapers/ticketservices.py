@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 from supabase import create_client
 import os
 import re
+import time
 from datetime import datetime
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -24,6 +25,24 @@ def strip_html(text):
     text = re.sub(r'\s+', ' ', text).strip()
     return text[:500]
 
+def fetch_with_retry(url, headers, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            r = requests.get(url, headers=headers, timeout=30)
+            r.encoding = "utf-8"
+            return r
+        except requests.Timeout:
+            if attempt < max_retries - 1:
+                wait = 2 ** attempt
+                print(f"Timeout {url} — retry {attempt+1}/{max_retries} σε {wait}s")
+                time.sleep(wait)
+            else:
+                print(f"Αποτυχία μετά από {max_retries} προσπάθειες: {url}")
+                return None
+        except Exception as e:
+            print(f"Error {url}: {e}")
+            return None
+
 def parse_date(date_str):
     try:
         date_str = date_str.strip()
@@ -33,9 +52,55 @@ def parse_date(date_str):
                 day = int(re.sub(r'\D', '', parts[i-1])) if i > 0 else 1
                 month = MONTHS_GR[part]
                 year = int(parts[i+1]) if i+1 < len(parts) and parts[i+1].isdigit() else datetime.now().year
-                return datetime(year, month, day).isoformat()
+                return datetime(year, month, day).strftime("%Y-%m-%d")
     except Exception:
         return None
+
+def parse_time(text):
+    """Εξάγει ώρα HH:MM από κείμενο όπως 'Ώρα έναρξης: 21:00' ή '22:00'"""
+    if not text:
+        return None
+    match = re.search(r'\b(\d{1,2}:\d{2})\b', text)
+    return match.group(1) if match else None
+
+def fetch_event_detail(url, headers):
+    """Επισκέπτεται τη σελίδα event και εξάγει time_start + description"""
+    r = fetch_with_retry(url, headers)
+    if not r:
+        return None, None
+
+    try:
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        # Εξαγωγή ώρας — ψάχνουμε σε πολλά σημεία
+        time_start = None
+        for selector in [".event-time", ".time", "[class*='time']", ".event-details", ".info"]:
+            el = soup.select_one(selector)
+            if el:
+                time_start = parse_time(el.get_text())
+                if time_start:
+                    break
+
+        # Fallback: ψάχνουμε στο κύριο κείμενο
+        if not time_start:
+            body_text = soup.get_text()
+            time_start = parse_time(body_text)
+
+        # Εξαγωγή description
+        description = None
+        for selector in [".event-description", ".description", ".content", "article p", ".entry-content p"]:
+            el = soup.select_one(selector)
+            if el:
+                text = strip_html(el.get_text())
+                if text and len(text) > 20:
+                    description = text
+                    break
+
+        return time_start, description
+
+    except Exception as e:
+        print(f"Detail parse error {url}: {e}")
+        return None, None
 
 def scrape():
     url = "https://www.ticketservices.gr/page/results/?q=%CE%BA%CF%81%CE%B7%CF%84%CE%B7"
@@ -45,8 +110,11 @@ def scrape():
     }
 
     try:
-        r = requests.get(url, headers=headers, timeout=30)
-        r.encoding = "utf-8"
+        r = fetch_with_retry(url, headers)
+        if not r:
+            print("ticketservices.gr: αδύνατη η σύνδεση")
+            return
+
         soup = BeautifulSoup(r.text, "html.parser")
 
         events = (
@@ -55,6 +123,10 @@ def scrape():
             soup.select("div.event-item") or
             soup.select("li.event")
         )
+
+        if not events:
+            print("ticketservices.gr: 0 events βρέθηκαν — πιθανή αλλαγή HTML δομής")
+            return
 
         print(f"ticketservices: βρέθηκαν {len(events)} events")
         count = 0
@@ -80,15 +152,20 @@ def scrape():
 
                 date_start = parse_date(date_el.get_text(strip=True)) if date_el else None
 
-                if date_start and date_start < datetime.now().isoformat():
+                if date_start and date_start < datetime.now().strftime("%Y-%m-%d"):
                     continue
+
+                # Επίσκεψη detail page για ώρα + description
+                time.sleep(1)
+                time_start, description = fetch_event_detail(source_url, headers)
 
                 raw_payload = {
                     "title": title,
-                    "description": None,
+                    "description": description,
                     "date_start": date_start,
                     "location_name": "Κρήτη",
                     "image_url": None,
+                    "time_start": time_start,
                 }
 
                 supabase.table("raw_events").insert({
